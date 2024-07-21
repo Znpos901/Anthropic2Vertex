@@ -46,52 +46,22 @@
 </details>
 
 ##### 2.下载、解压文件。  
-
-<details> 
-  <summary>点击展开</summary>
-  
-**For Linux：**
-
-  ```
-  wget --no-check-certificate --content-disposition "https://github.com/TheValkyrja/Anthropic2Vertex/releases/latest/download/Anthropic2Vertex-linux-$(uname -m).tar.gz"
-  tar -xzvf Anthropic2Vertex-linux-$(uname -m).tar.gz
-  ```
-  ```
-  sudo rm -rf Anthropic2Vertex-linux-$(uname -m).tar.gz #删除压缩包，可选
-  ```
-
 **For Windows:**  
-
-前往[Release](https://github.com/TheValkyrja/Anthropic2Vertex/releases),下载[Anthropic2Vertex.zip](https://github.com/TheValkyrja/Anthropic2Vertex/releases/latest/download/Anthropic2Vertex-windows-x86_64.zip)  
-并解压文件。
-
-</details>
+下载整个项目的压缩包或gitclone此项目地址到本地，并解压文件。
 
 ##### 3.配置文件。  
-
-<details>
-  <summary>点击展开</summary>
-
 导航至解压的文件夹。  
-
-重命名.env.example为.env，并使用文本编辑器编辑.env文件：
-
-将端口，监听地址修改为你的服务器监听地址（默认127.0.0.1:5000）  
-并依照需求设置密码（为空即不认证，慎选）。
-
-PROJECT ID可以在GCP首页找到，设置为你自己的ProjectID.
-![UZOJG8RSZ HJSFKEU01DJO9](https://github.com/TheValkyrja/Anthropic2Vertex/assets/45366459/f027c76f-b6dd-43eb-96c9-1ffe629de509)
-
-访问区域填写为为你有权访问、且Claude on Vertex正常服务的地区，默认us-east5。
-
-最后，将第一步中下载下来的xxxxxxxxxx.json密钥文件重命名为auth.json，放入文件夹下auth目录中。
-
-</details>
+使用文本编辑器编辑.env文件：
+将端口，监听地址修改为你需要的服务器监听地址（默认127.0.0.1:5000）  
+并依照需求设置密码（为空即不认证，慎选）、访问地区、切换key的对话轮数等参数。
+访问区域填写为为你有权访问、且Claude on Vertex正常服务的地区，留空不填和示例已填入参数均为us-east5，根据需求自行修改。
+切换key的对话轮数即字面意思。
+将前面下载的json文件命名为gcp-key0.json，放入项目根目录中，如有多个密钥则依次命名为gcp-key1.json、gcp-key2.json……以此类推。
 
 ##### 4.安装并启动
-
 <details>
-  <summary>从Docker部署启动(推荐)</summary>
+  
+  <summary>从Docker部署启动(不推荐，本项目传到我这已经是三改项目了，docker配置文件过于古老，需要docker部署建议循着fork树找原项目去)</summary>
   
   本方法的优点：  
   1. 跨平台兼容性强  
@@ -137,82 +107,10 @@ docker compose up -d
 
 <details>
   
-  <summary>直接运行可执行文件（无需前置依赖）</summary>
-  
-  本方法的优点：  
-  1. 无需（也非常不便于）管理任何依赖  
-  2. 综合运行体积最优  
-  3. 配置运行流程简单  
-
-  本方法的缺点：
-  1. 系统兼容性较差（旧版系统可能无法运行）。
-  2. 打包应用封闭，内容不透明  
-  3. 几乎不存在可调试空间
-
-二进制文件编译于 Debian GNU/Linux 11 (bullseye)与Windows 10 专业版	22H2。任何比这两者更旧或GLIBC不兼容的系统均不保证正常运行。已于Ubuntu22.04进行测试。
-
-**二进制文件内容不透明，因此对你的系统存在安全性风险。  
-*USE AT YOUR OWN RISKS***
-
-Pyinstaller SPEC打包文件已提供于源码中。
+  <summary>直接运行可执行文件（初次启动会下载嵌入式python等依赖）</summary>
 
 1. 导航至文件目录。  
-
-2. 启动应用。
-      
-   For Windows：  
-
-   运行main.exe文件启动应用。
-   
-   For Linux：
-   ```
-   #赋予文件运行权限
-   chmod +x main
-   ./main
-   ```
-
-使用方式同上。
-
-</details>
-
-<details>
-  
-  <summary>使用Python运行</summary>
-  
-  本方法的优点：  
-  1. 所需应用文件体积极小  
-  2. 可扩展性与自定义性强  
-  3. 代码运行内容安全透明  
-
-  本方法的缺点：
-  1. 需要Python运行环境（最好是python3）与Pip包管理器
-  2. python依赖与运行库可能占用空间较大。
-  3. 对于不同系统兼容性不定。
-
-**如果你看不懂这些内容在说什么，请返回尝试前两种运行方法！**
-
-1. 确保你的系统已经安装了python3与pip3包管理器  
-以Ubuntu为例：  
-安装python与pip
-```
-sudo apt-get update
-sudo apt install python3 python3-pip
-```
-
-2. 安装依赖。  
-导航至应用文件夹，运行
-```
-pip install -r requirements.txt
-```
-
-3. 运行。
-```
-python3 main.py
-```
-
-4. 删除目录下main与main.exe文件进一步节省空间。  
-注：照做这步后将无法使用二进制文件启动。确保你知道你在做什么，否则请无视。
-
-应用将会监听于.env文件中设置的对应地址与端口，使用方式与docker运行一样。
-
+2. window用户双击start.bat（linux用户自行寻思寻思）
+3. 等依赖装完就完事了，网络尽量保持通畅
+   （注：linux用户怎么跑起来请自行寻思寻思）
 </details>
