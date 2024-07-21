@@ -1,4 +1,4 @@
-# Anthropic2Vertex
+# Claude-for-Vertex-ai
 使用官方SDK实现的将标准Anthropic Claude请求转发至VertexAI Claude的代理服务器应用，使用Fastapi。
 支持Claude 3.5 sonnet, Claude 3 Opus/Sonnet/Haiku on Vertex AI
 
