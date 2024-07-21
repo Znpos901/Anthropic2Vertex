@@ -2,6 +2,9 @@
 
 import os
 import sys
+# 添加当前目录到 Python 路径
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
 import json
 import time
 import subprocess
@@ -9,6 +12,7 @@ import colorama
 import pkg_resources
 import importlib.util
 import globalVar
+
 
 def check_requirements():
     if getattr(sys, 'frozen', False):
