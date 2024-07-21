@@ -1,6 +1,8 @@
 import json
+import tempfile
 import os
 import sys
+import platform
 import globalVar
 from typing import Optional, Union
 
@@ -15,12 +17,26 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from secrets import compare_digest
 
+# 获取临时目录路径
+if platform.system() == 'Windows':
+    temp_dir = tempfile.gettempdir()
+else:
+    temp_dir = '/dev/shm'
+
+temp_key_path = os.path.join(temp_dir, 'temp_auth.json')
+
+jsondata = globalVar.accountdata
+accountIndex = 0
+accountName = ""
+region = globalVar.region
+switch_frequency = globalVar.switch_frequency
+messageCount = 0
+
 # 初始化 FastAPI 应用程序
 app = FastAPI()
 
 # 获取环境变量 DOCKER_ENV，如果没有设置，默认为 False
 is_docker = os.environ.get('DOCKER_ENV', 'False').lower() == 'true'
-
 
 #加载文件目录
 def get_base_path():
@@ -30,20 +46,12 @@ def get_base_path():
     else:
         # 如果是从Python运行
         return os.path.dirname(os.path.abspath(__file__))
-
-
-# 加载环境变量
-#env_path = os.path.join(get_base_path(), '.env')
-#load_dotenv(env_path)
-
-#os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = #os.path.join(get_base_path(), 'auth', 'auth.json')
-
-
-jsondata = []
-accountIndex = 0
+    
+initial_index = int(os.getenv('GCP_KEY_INDEX', '0'))
+jsondata, key_file_names = globalVar.accountdata, globalVar.key_file_names
+accountIndex = initial_index  # 使用从 .env 文件读取的索引初始化 accountIndex
 accountName = ""
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.path.join(
-    '/dev/shm', 'auth.json')
+temp_key_path = os.path.join('/dev/shm', 'temp_auth.json')
 hostaddr = '0.0.0.0' if is_docker else os.environ.get('host', '127.0.0.1')
 
 if len(os.environ.get('host', '127.0.0.1')) == 0:
@@ -54,11 +62,6 @@ if len(os.environ.get('port', '5000')) == 0:
 else:
     lsnport = int(os.environ.get('port', 5000))
 
-if len(os.environ.get('region', 'us-east5')) == 0:
-    region = 'us-east5'
-else:
-    region = os.environ.get('region','us-east5')
-
 if len(os.environ.get('counter', '0')) == 0:
     timeToSwotch = int(0)
 else:
@@ -68,37 +71,31 @@ password = os.environ.get('password')
 messageCount = 0
 
 # VertexAI 配置
-vertex_client = AnthropicVertex(region=region)
+vertex_client = None
 
-def loadAccountData():
-    start = 0
-    global jsondata
-    for index in range(globalVar.accountdata.count("{")):
-        jsondata.append(globalVar.accountdata[globalVar.accountdata.index("{", start):globalVar.accountdata.index("}", start)+1])
-        start = globalVar.accountdata.index("}",start)+1
-    changeActiveAccount(0)
+def changeActiveAccount(index=None):
+    global accountIndex, accountName, vertex_client
     
-
-def changeActiveAccount(index):
-    if index == len(jsondata):
-        index = 0
+    if index is None:
+        # 如果没有指定索引，切换到下一个账号
+        accountIndex = (accountIndex + 1) % len(jsondata)
+    else:
+        # 如果指定了索引，使用指定的索引
+        accountIndex = index % len(jsondata)
     
-    jsfile = json.dumps(jsondata[index]).replace('\\"', '"').replace('"{','{').replace('}"','}')
-    with open('/dev/shm/auth.json', 'w') as f:
-        f.write(jsfile)
-    global accountIndex
-    global accountName
-    global vertex_client
-    accountIndex = index
-    starttemp = jsondata[index].index("project_id") + 11
-    starttemp2 = jsondata[index].index("\"",starttemp) + 1
-    accountName = jsondata[index][starttemp2:jsondata[index].index(",",starttemp)-1]
+    os.makedirs(os.path.dirname(temp_key_path), exist_ok=True)
+    with open(temp_key_path, 'w') as f:
+        json.dump(jsondata[accountIndex], f)
+    
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_key_path
+    
+    accountName = jsondata[accountIndex]['project_id']
     vertex_client = AnthropicVertex(project_id=accountName, region=region)
     vertexai.init(project=accountName, location=region)
-    print(f"\033[32mINFO\033[0m:     Logged in \"{accountName}\".Index: {accountIndex}")
-    
+    print(f"\033[32mINFO\033[0m:     当前登录\"{accountName}\". Key文件:{key_file_names[accountIndex]}, 地区:{region}")
 
-loadAccountData()
+# 使用从 .env 文件读取的初始索引初始化第一个账号
+changeActiveAccount(initial_index)
 
 # CORS 配置
 app.add_middleware(
@@ -109,12 +106,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 class MessageRequest(BaseModel):
     model: str
     stream: Optional[bool] = False
     # 添加其他可能的字段
-
 
 def vertex_model(original_model):
     # 定义模型名称映射
@@ -122,7 +117,6 @@ def vertex_model(original_model):
     with open(mapping_file, 'r') as f:
         model_mapping = json.load(f)
     return model_mapping[original_model]
-
 
 # 比较密码
 def check_auth(api_key: Optional[str]) -> bool:
@@ -177,21 +171,16 @@ async def gemini_proxy(request: Request, requestModel: str ,key: str,alt:Union[s
             messageCount = 0
         
     data = await request.json()
-    #print("Original request:")
-    #print(data)
 
-    #请求解析
     sendModel = requestModel.split(":")[0].replace("-latest", "-001")
     stream = alt or requestModel.split(":")[1] == "streamGenerateContent"
     contents = data.get('contents')
     generationConfig =  data.get('generationConfig')
     system_instruction = data.get('system_instruction')['parts']['text'] if data.get('system_instruction') else None
 
-    #对模型配置选项进行转换
     gemini_config = {}
     for key, value in generationConfig.items():
         if key == 'stopSequences':
-            # 确保stopSequences值不包含空字符串
             if any(not seq for seq in value):
                 value = [seq for seq in value if seq]
             gemini_config["stop_sequences"] = value
@@ -210,18 +199,14 @@ async def gemini_proxy(request: Request, requestModel: str ,key: str,alt:Union[s
         else:
             gemini_config[key] = value
 
-    # 模型配置
     aiModel = GenerativeModel(model_name=sendModel, system_instruction=system_instruction)
     print(f"\033[32mINFO\033[0m:     Request Model: \"{sendModel}\"")
 
     try: 
-        # 发送请求到 VertexAI
-        # 检查是否为流式请求
         if stream:
             def generate():
                 for chunk in aiModel.generate_content(json.dumps(contents), generation_config=gemini_config, safety_settings=safety_settings, stream=True):
                     response = f"data: {json.dumps(translateResponseToSillytavernFormat(chunk.text,chunk.usage_metadata))}\n\n"
-                    #print(f"{response}")
                     yield response
             
             return StreamingResponse(generate(),
@@ -229,7 +214,6 @@ async def gemini_proxy(request: Request, requestModel: str ,key: str,alt:Union[s
                  headers={'X-Accel-Buffering': 'no'})
         else:
             response = aiModel.generate_content(json.dumps(contents), generation_config=gemini_config, safety_settings=safety_settings, stream=False)
-            #print(response)
             return JSONResponse(content=translateResponseToSillytavernFormat(response.text,response.usage_metadata), status_code=200)
     except Exception as e:
         print(str(e))
@@ -237,53 +221,36 @@ async def gemini_proxy(request: Request, requestModel: str ,key: str,alt:Union[s
 
 @app.post("/v1/messages")
 async def proxy_request(request: Request, x_api_key: Optional[str] = Header(None)):
+    global messageCount
+    
     # 密码验证
     if not check_auth(x_api_key):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    if timeToSwotch != 0:
-        global messageCount
+    # 检查是否需要切换账号
+    if switch_frequency > 0:
         messageCount += 1
-        if messageCount == timeToSwotch:
-            changeActiveAccount(accountIndex+1)
-            messageCount = 0
+        if messageCount >= switch_frequency:
+            changeActiveAccount()  # 切换到下一个账号
+            messageCount = 0  # 重置计数器
     
-    # 获取原始请求数据
     data = await request.json()
 
-    #    print("Original request:")
-    #    print(data)
-
-    # 准备发送到 VertexAI 的请求
     try:
-        # 创建一个新的字典来存储请求参数
         vertex_request = {}
 
-        # 遍历原始请求中的所有键值对
         for key, value in data.items():
             if key == 'model':
-                # 对模型名称进行转换
                 vertex_request[key] = vertex_model(value)
                 print(f"\033[32mINFO\033[0m:     Request Model: \"{vertex_model(value)}\"")
             else:
-                # 直接复制其他所有参数
                 vertex_request[key] = value
 
-        # 输出处理后的请求
-
-
-#        print("Processed request:")
-#        print(json.dumps(vertex_request, indent=2))
-
-# 发送请求到 VertexAI
-# 检查是否为流式请求
         if vertex_request.get('stream', False):
-
             def generate():
                 yield 'event: ping\ndata: {"type": "ping"}\n\n'
                 for chunk in vertex_client.messages.create(**vertex_request):
                     response = f"event: {chunk.type}\ndata: {json.dumps(chunk.model_dump())}\n\n"
-                    #                    print(f"{response}")
                     yield response
 
             return StreamingResponse(generate(),
@@ -291,8 +258,11 @@ async def proxy_request(request: Request, x_api_key: Optional[str] = Header(None
                                      headers={'X-Accel-Buffering': 'no'})
         else:
             response = vertex_client.messages.create(**vertex_request)
-            #            print(f"{response}")
             return JSONResponse(content=response.model_dump(), status_code=200)
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host=hostaddr, port=lsnport)
